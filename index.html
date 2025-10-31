@@ -151,120 +151,122 @@
 </div>
 
 <script>
-const API_KEY = "YOUR_API_KEY_HERE";
-const API_URL_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
-const MODEL_NAME = 'gemini-2.5-flash-preview-09-2025';
+    // --- Gemini API Setup ---
+    const API_KEY = "YOUR_GEMINI_API_KEY"; // <-- Replace with your actual key
+    const MODEL_NAME = 'gemini-2.5-flash-preview-09-2025';
+    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateText?key=${API_KEY}`;
 
-const nativeInput = document.getElementById('nativeInput');
-const englishOutput = document.getElementById('englishOutput');
-const nativeLangSelect = document.getElementById('nativeLang');
-const loadingIndicator = document.getElementById('loadingIndicator');
-const statusMessage = document.getElementById('statusMessage');
-const wordCountDisplay = document.getElementById('wordCount');
-const copyButton = document.getElementById('copyButton');
+    // --- DOM Elements ---
+    const nativeInput = document.getElementById('nativeInput');
+    const englishOutput = document.getElementById('englishOutput');
+    const nativeLangSelect = document.getElementById('nativeLang');
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const statusMessage = document.getElementById('statusMessage');
+    const wordCountDisplay = document.getElementById('wordCount');
+    const copyButton = document.getElementById('copyButton');
 
-let lastQuery = '';
+    let lastQuery = '';
 
-const debounce = (func, delay) => {
-    let timeoutId;
-    return (...args) => {
-        clearTimeout(timeoutId);
-        timeoutId = setTimeout(() => func.apply(this, args), delay);
+    // --- Debounce Function ---
+    const debounce = (func, delay) => {
+        let timeoutId;
+        return (...args) => {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => func.apply(this, args), delay);
+        };
     };
-};
 
-const exponentialBackoffFetch = async (url, options, maxRetries = 5) => {
-    for (let i=0;i<maxRetries;i++){
-        try{
-            const response = await fetch(url, options);
-            if(response.ok) return response;
-            if(response.status===429 && i<maxRetries-1){
-                const delay=Math.pow(2,i)*1000 + Math.random()*1000;
-                await new Promise(r=>setTimeout(r,delay));
-                continue;
+    // --- Translate Text ---
+    const translateText = async (text, sourceLang) => {
+        if (!text.trim()) {
+            englishOutput.textContent = 'The translation will appear here instantly.';
+            englishOutput.classList.add('italic');
+            copyButton.disabled = true;
+            return;
+        }
+
+        if (text === lastQuery) return; // skip repeated calls
+        lastQuery = text;
+
+        loadingIndicator.classList.remove('hidden');
+        statusMessage.classList.add('hidden');
+        englishOutput.classList.remove('italic');
+        englishOutput.textContent = '...';
+        copyButton.disabled = true;
+
+        const prompt = `Translate the following ${sourceLang === 'auto' ? '' : sourceLang} text to fluent English:\n"${text}"`;
+
+        try {
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    prompt: prompt,
+                    temperature: 0,
+                    max_output_tokens: 256
+                })
+            });
+
+            if (!response.ok) throw new Error(`API error: ${response.status} ${response.statusText}`);
+
+            const result = await response.json();
+            const translatedText = result.candidates?.[0]?.output_text;
+
+            if (translatedText) {
+                englishOutput.textContent = translatedText.trim();
+                copyButton.disabled = false;
+            } else {
+                englishOutput.textContent = 'Could not generate translation.';
+                statusMessage.textContent = 'Error: empty response from AI.';
+                statusMessage.classList.remove('hidden');
+                console.error('API response error:', result);
             }
-            throw new Error(`API failed with ${response.status}`);
-        }catch(e){
-            if(i===maxRetries-1) throw e;
-            const delay=Math.pow(2,i)*1000 + Math.random()*1000;
-            await new Promise(r=>setTimeout(r,delay));
-        }
-    }
-    throw new Error("Max retries exceeded");
-}
-
-const translateText = async (text, sourceLang) => {
-    if(!text.trim()){
-        englishOutput.textContent='The translation will appear here instantly.';
-        englishOutput.classList.add('italic');
-        copyButton.disabled=true;
-        return;
-    }
-    if(text===lastQuery) return;
-    lastQuery=text;
-
-    loadingIndicator.classList.remove('hidden');
-    statusMessage.classList.add('hidden');
-    englishOutput.classList.remove('italic');
-    englishOutput.textContent='...';
-    copyButton.disabled=true;
-
-    const languageName=sourceLang==='auto'?'the source language':sourceLang;
-    const systemPrompt=`Translate to fluent English. Input language: ${languageName}. Output ONLY translated text.`;
-    const userQuery=`Translate: "${text}"`;
-
-    const apiUrl=`${API_URL_BASE}${MODEL_NAME}:generateContent?key=${API_KEY}`;
-    const payload={contents:[{parts:[{text:userQuery}]}],systemInstruction:{parts:[{text:systemPrompt}]}};
-
-    try{
-        const response = await exponentialBackoffFetch(apiUrl,{
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify(payload)
-        });
-        const result = await response.json();
-        const translatedText = result.candidates?.[0]?.content?.parts?.[0]?.text;
-
-        if(translatedText){
-            englishOutput.textContent=translatedText.trim();
-            copyButton.disabled=false;
-        }else{
-            englishOutput.textContent='Could not generate translation.';
-            statusMessage.textContent='Error: malformed API response';
+        } catch (error) {
+            console.error('Translation failed:', error);
+            englishOutput.textContent = 'Translation service error. Please try again.';
+            statusMessage.textContent = `Error: ${error.message}`;
             statusMessage.classList.remove('hidden');
+        } finally {
+            loadingIndicator.classList.add('hidden');
         }
-    }catch(err){
-        englishOutput.textContent='Translation service error.';
-        statusMessage.textContent=`Error: ${err.message}`;
-        statusMessage.classList.remove('hidden');
-    }finally{
-        loadingIndicator.classList.add('hidden');
-    }
-}
+    };
 
-const handleInputChange=()=>{
-    const text=nativeInput.value;
-    const sourceLang=nativeLangSelect.value;
-    const wordCount=text.trim().split(/\s+/).filter(w=>w.length>0).length;
-    wordCountDisplay.textContent=`Words: ${wordCount}`;
-    debouncedTranslate(text,sourceLang);
-}
+    // --- Input Handler ---
+    const handleInputChange = () => {
+        const text = nativeInput.value;
+        const sourceLang = nativeLangSelect.value;
 
-const debouncedTranslate=debounce(translateText,500);
+        // Word count
+        const wordCount = text.trim().split(/\s+/).filter(w => w.length > 0).length;
+        wordCountDisplay.textContent = `Words: ${wordCount}`;
 
-nativeInput.addEventListener('input',handleInputChange);
-nativeLangSelect.addEventListener('change',handleInputChange);
+        debouncedTranslate(text, sourceLang);
+    };
 
-copyButton.addEventListener('click',()=>{
-    const textToCopy=englishOutput.textContent.trim();
-    if(textToCopy && textToCopy!=='The translation will appear here instantly.' && textToCopy!=='...'){
-        navigator.clipboard.writeText(textToCopy);
-        copyButton.textContent='Copied!';
-        setTimeout(()=>copyButton.textContent='Copy Translation',1500);
-    }
-});
+    const debouncedTranslate = debounce(translateText, 500);
 
-handleInputChange();
+    // --- Event Listeners ---
+    nativeInput.addEventListener('input', handleInputChange);
+    nativeLangSelect.addEventListener('change', handleInputChange);
+
+    copyButton.addEventListener('click', () => {
+        const textToCopy = englishOutput.textContent.trim();
+        if (!textToCopy || textToCopy === '...' || textToCopy === 'The translation will appear here instantly.') return;
+
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            copyButton.textContent = 'Copied!';
+            copyButton.classList.remove('bg-green-500', 'hover:bg-green-600');
+            copyButton.classList.add('bg-blue-500', 'hover:bg-blue-600');
+            setTimeout(() => {
+                copyButton.textContent = 'Copy Translation';
+                copyButton.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+                copyButton.classList.add('bg-green-500', 'hover:bg-green-600');
+            }, 1500);
+        }).catch(err => console.error('Copy failed:', err));
+    });
+
+    // --- Initial setup ---
+    handleInputChange();
 </script>
 </body>
 </html>
