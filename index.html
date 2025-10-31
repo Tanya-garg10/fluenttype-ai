@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FluentType AI Translator</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+    html, body {
+        height: 100%;
+        margin: 0;
+    }
+
+    body {
+        font-family: 'Inter', sans-serif;
+        background-color: #f7f9fc;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 0;
+    }
+
+    .translator-container {
+        width: 95%;
+        height: 95%;
+        display: flex;
+        flex-direction: column;
+        background-color: white;
+        border-radius: 1rem;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        overflow: hidden;
+    }
+
+    main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        padding: 1.5rem;
+    }
+
+    .lang-selectors {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .panels {
+        display: flex;
+        flex: 1;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .panel {
+        flex: 1 1 48%;
+        display: flex;
+        flex-direction: column;
+    }
+
+    textarea, .output-area {
+        flex: 1;
+        width: 100%;
+        border: 1px solid #d1d5db;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        resize: none;
+        overflow-y: auto;
+        font-size: 1rem;
+    }
+
+    textarea:focus, .output-area:focus {
+        outline: none;
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59,130,246,0.3);
+    }
+
+    .spinner {
+        border: 4px solid rgba(0,0,0,0.1);
+        border-left-color: #3b82f6;
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="app" class="translator-container">
+    <!-- Header -->
+    <header class="p-4 border-b border-gray-100 bg-blue-600 text-white">
+        <h1 class="text-2xl font-bold flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+            </svg>
+            FluentType AI
+        </h1>
+        <p class="text-sm mt-1 text-blue-200">Instant, smart English translation as you type.</p>
+    </header>
+
+    <main>
+        <!-- Language Selectors -->
+        <div class="lang-selectors">
+            <div class="flex-1 min-w-[150px]">
+                <label for="nativeLang" class="block text-xs font-semibold uppercase text-gray-500 mb-1">Source Language</label>
+                <select id="nativeLang" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    <option value="auto">Auto Detect</option>
+                    <option value="Spanish">Spanish</option>
+                    <option value="French">French</option>
+                    <option value="German">German</option>
+                    <option value="Chinese">Chinese (Mandarin)</option>
+                    <option value="Japanese">Japanese</option>
+                    <option value="Hindi">Hindi</option>
+                    <option value="Portuguese">Portuguese</option>
+                    <option value="Russian">Russian</option>
+                </select>
+            </div>
+            <div class="flex-1 min-w-[150px]">
+                <label for="englishLang" class="block text-xs font-semibold uppercase text-gray-500 mb-1">Target Language</label>
+                <input id="englishLang" type="text" value="English" disabled class="w-full p-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed text-gray-600">
+            </div>
+        </div>
+
+        <!-- Panels -->
+        <div class="panels">
+            <!-- Native Input -->
+            <div class="panel">
+                <label for="nativeInput" class="text-sm font-medium text-gray-700 mb-1">Type Here (Native Language)</label>
+                <textarea id="nativeInput" placeholder="Start typing..." class="input-area"></textarea>
+                <p id="wordCount" class="text-xs text-gray-500 text-right mt-1">Words: 0</p>
+            </div>
+
+            <!-- English Output -->
+            <div class="panel">
+                <label class="text-sm font-medium text-gray-700 flex justify-between items-center mb-1">
+                    Fluent English Translation
+                    <span id="loadingIndicator" class="hidden flex items-center text-blue-600 text-sm">
+                        <div class="spinner mr-2"></div> Translating...
+                    </span>
+                </label>
+                <div id="englishOutput" class="output-area italic bg-gray-50">The translation will appear here instantly.</div>
+                <button id="copyButton" class="mt-2 w-full bg-green-500 text-white p-2 rounded-lg hover:bg-green-600 transition-colors disabled:bg-green-300" disabled>Copy Translation</button>
+            </div>
+        </div>
+
+        <!-- Status Message -->
+        <div id="statusMessage" class="text-center text-sm text-red-600 hidden p-3 bg-red-50 rounded-lg border border-red-200 mt-2"></div>
+    </main>
+</div>
+
+<script>
+const API_KEY = "YOUR_API_KEY_HERE";
+const API_URL_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
+const MODEL_NAME = 'gemini-2.5-flash-preview-09-2025';
+
+const nativeInput = document.getElementById('nativeInput');
+const englishOutput = document.getElementById('englishOutput');
+const nativeLangSelect = document.getElementById('nativeLang');
+const loadingIndicator = document.getElementById('loadingIndicator');
+const statusMessage = document.getElementById('statusMessage');
+const wordCountDisplay = document.getElementById('wordCount');
+const copyButton = document.getElementById('copyButton');
+
+let lastQuery = '';
+
+const debounce = (func, delay) => {
+    let timeoutId;
+    return (...args) => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => func.apply(this, args), delay);
+    };
+};
+
+const exponentialBackoffFetch = async (url, options, maxRetries = 5) => {
+    for (let i=0;i<maxRetries;i++){
+        try{
+            const response = await fetch(url, options);
+            if(response.ok) return response;
+            if(response.status===429 && i<maxRetries-1){
+                const delay=Math.pow(2,i)*1000 + Math.random()*1000;
+                await new Promise(r=>setTimeout(r,delay));
+                continue;
+            }
+            throw new Error(`API failed with ${response.status}`);
+        }catch(e){
+            if(i===maxRetries-1) throw e;
+            const delay=Math.pow(2,i)*1000 + Math.random()*1000;
+            await new Promise(r=>setTimeout(r,delay));
+        }
+    }
+    throw new Error("Max retries exceeded");
+}
+
+const translateText = async (text, sourceLang) => {
+    if(!text.trim()){
+        englishOutput.textContent='The translation will appear here instantly.';
+        englishOutput.classList.add('italic');
+        copyButton.disabled=true;
+        return;
+    }
+    if(text===lastQuery) return;
+    lastQuery=text;
+
+    loadingIndicator.classList.remove('hidden');
+    statusMessage.classList.add('hidden');
+    englishOutput.classList.remove('italic');
+    englishOutput.textContent='...';
+    copyButton.disabled=true;
+
+    const languageName=sourceLang==='auto'?'the source language':sourceLang;
+    const systemPrompt=`Translate to fluent English. Input language: ${languageName}. Output ONLY translated text.`;
+    const userQuery=`Translate: "${text}"`;
+
+    const apiUrl=`${API_URL_BASE}${MODEL_NAME}:generateContent?key=${API_KEY}`;
+    const payload={contents:[{parts:[{text:userQuery}]}],systemInstruction:{parts:[{text:systemPrompt}]}};
+
+    try{
+        const response = await exponentialBackoffFetch(apiUrl,{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify(payload)
+        });
+        const result = await response.json();
+        const translatedText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        if(translatedText){
+            englishOutput.textContent=translatedText.trim();
+            copyButton.disabled=false;
+        }else{
+            englishOutput.textContent='Could not generate translation.';
+            statusMessage.textContent='Error: malformed API response';
+            statusMessage.classList.remove('hidden');
+        }
+    }catch(err){
+        englishOutput.textContent='Translation service error.';
+        statusMessage.textContent=`Error: ${err.message}`;
+        statusMessage.classList.remove('hidden');
+    }finally{
+        loadingIndicator.classList.add('hidden');
+    }
+}
+
+const handleInputChange=()=>{
+    const text=nativeInput.value;
+    const sourceLang=nativeLangSelect.value;
+    const wordCount=text.trim().split(/\s+/).filter(w=>w.length>0).length;
+    wordCountDisplay.textContent=`Words: ${wordCount}`;
+    debouncedTranslate(text,sourceLang);
+}
+
+const debouncedTranslate=debounce(translateText,500);
+
+nativeInput.addEventListener('input',handleInputChange);
+nativeLangSelect.addEventListener('change',handleInputChange);
+
+copyButton.addEventListener('click',()=>{
+    const textToCopy=englishOutput.textContent.trim();
+    if(textToCopy && textToCopy!=='The translation will appear here instantly.' && textToCopy!=='...'){
+        navigator.clipboard.writeText(textToCopy);
+        copyButton.textContent='Copied!';
+        setTimeout(()=>copyButton.textContent='Copy Translation',1500);
+    }
+});
+
+handleInputChange();
+</script>
+</body>
+</html>
