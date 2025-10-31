@@ -57,9 +57,7 @@
   <div class="translator-container flex flex-col">
     <!-- Header -->
     <header class="p-6 border-b bg-blue-600 text-white rounded-t-xl">
-      <h1 class="text-3xl font-bold flex items-center">
-        FluentType AI
-      </h1>
+      <h1 class="text-3xl font-bold flex items-center">FluentType AI</h1>
       <p class="text-sm mt-1 text-blue-200">Instant, smart English translation as you type.</p>
     </header>
 
@@ -112,6 +110,10 @@
   </div>
 
   <script>
+    const API_KEY = "AIzaSyB4pDaMy0ZNJMm6fsc6mMAGzUjCHyzgF38"; // Paste your Gemini API key here
+    const API_URL_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
+    const MODEL_NAME = 'gemini-2.5-flash-preview-09-2025';
+
     const nativeInput = document.getElementById('nativeInput');
     const englishOutput = document.getElementById('englishOutput');
     const nativeLangSelect = document.getElementById('nativeLang');
@@ -134,22 +136,28 @@
         return;
       }
       loadingIndicator.classList.remove('hidden');
+
+      const languageName = sourceLang === 'auto' ? 'the source language' : sourceLang;
+      const systemPrompt = `You are a professional translator. Translate the user's input into fluent English. Input is in ${languageName}. Output only the translated text.`;
+      const userQuery = `Translate: "${text}"`;
+
+      const payload = {
+        contents: [{ parts: [{ text: userQuery }] }],
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+      };
+
       try {
-        const res = await fetch('https://libretranslate.de/translate', {
+        const response = await fetch(`${API_URL_BASE}${MODEL_NAME}:generateContent?key=${API_KEY}`, {
           method: 'POST',
-          body: JSON.stringify({
-            q: text,
-            source: sourceLang === 'auto' ? 'auto' : sourceLang,
-            target: 'en',
-            format: 'text'
-          }),
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
         });
-        const data = await res.json();
-        englishOutput.value = data.translatedText;
-        copyButton.disabled = false;
+        const result = await response.json();
+        const translatedText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+        englishOutput.value = translatedText ? translatedText.trim() : "Could not generate translation.";
+        copyButton.disabled = !translatedText;
       } catch (err) {
-        englishOutput.value = "Translation failed. Try again later.";
+        englishOutput.value = "Translation service error. Please try again.";
         console.error(err);
       } finally {
         loadingIndicator.classList.add('hidden');
